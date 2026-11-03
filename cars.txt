@@ -1,0 +1,20 @@
+3,Toyota,Camry,2022,25000,35000,Red
+4,Honda,Civic,2021,22000,28000,Blue
+5,Ford,Mustang,2020,30000,20000,Black
+6,Chevrolet,Malibu,2019,18000,45000,White
+7,Nissan,Altima,2022,24000,32000,Silver
+8,Hyundai,Elantra,2023,21000,18000,Gray
+9,Kia,Sportage,2021,26000,40000,White
+10,Mazda,CX-5,2022,28000,25000,Blue
+11,Subaru,Outback,2020,27000,45000,Green
+12,Volkswagen,Jetta,2021,23000,30000,Black
+13,BMW,330i,2022,35000,22000,Gray
+14,Mercedes-Benz,C300,2021,38000,28000,Silver
+15,Audi,A4,2023,39000,15000,White
+16,Lexus,ES350,2022,42000,20000,Black
+17,Jeep,Wrangler,2020,32000,50000,Red
+18,Dodge,Charger,2021,29000,35000,Blue
+19,GMC,Terrain,2022,31000,27000,Gray
+20,Acura,TLX,2023,37000,18000,White
+21,Tesla,Model 3,2022,33000,24000,Red
+22,Volvo,XC60,2021,36000,31000,Silver
