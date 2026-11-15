@@ -1,3 +1,4 @@
+
 package edu.valencia.cardms;
 
 import java.io.BufferedReader;
@@ -14,18 +15,29 @@ import java.util.List;
 
 public class DatabaseManager {
 
-    private static final String DATABASE_URL = "jdbc:sqlite:cars.db";
+    private final String databaseURL;
 
-    public DatabaseManager() {
+    // Constructor
+    public DatabaseManager(String databasePath) throws SQLException {
+
+        if (databasePath == null || databasePath.trim().isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Database location cannot be empty."
+            );
+        }
+
+        databaseURL = "jdbc:sqlite:" + databasePath;
+
         createTable();
     }
 
+    // Connect to SQLite
     public Connection connect() throws SQLException {
 
-        return DriverManager.getConnection(DATABASE_URL);
+    return DriverManager.getConnection(databaseURL);
     }
-
-    private void createTable() {
+    // Create cars table
+    private void createTable() throws SQLException {
 
         String sql =
                 "CREATE TABLE IF NOT EXISTS cars (" +
@@ -42,31 +54,16 @@ public class DatabaseManager {
                 Connection connection = connect();
                 Statement statement = connection.createStatement()
         ) {
-
             statement.execute(sql);
-
-        } catch (SQLException e) {
-
-            System.out.println(
-                    "Could not create the cars table."
-            );
-
-            System.out.println(
-                    "Database error: " + e.getMessage()
-            );
         }
     }
 
+    // Add a car
     public boolean addCar(Car car) {
 
-        if (car == null) {
-            return false;
-        }
-
-        String sql =
-                "INSERT INTO cars " +
-                        "(id, make, model, year, price, mileage, color) " +
-                        "VALUES (?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO cars " +
+                "(id, make, model, year, price, mileage, color) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?)";
 
         try (
                 Connection connection = connect();
@@ -82,60 +79,53 @@ public class DatabaseManager {
             statement.setInt(6, car.getMileage());
             statement.setString(7, car.getColor());
 
-            statement.executeUpdate();
-
-            return true;
+            return statement.executeUpdate() > 0;
 
         } catch (SQLException e) {
-
+            System.out.println("Error adding car: " + e.getMessage());
             return false;
         }
     }
 
+    // Get all cars
     public List<Car> getAllCars() {
 
         List<Car> cars = new ArrayList<>();
 
-        String sql =
-                "SELECT id, make, model, year, price, mileage, color " +
-                        "FROM cars ORDER BY id";
+        String sql = "SELECT * FROM cars";
 
         try (
                 Connection connection = connect();
                 Statement statement = connection.createStatement();
-                ResultSet resultSet = statement.executeQuery(sql)
+                ResultSet result = statement.executeQuery(sql)
         ) {
 
-            while (resultSet.next()) {
+            while (result.next()) {
 
                 Car car = new Car(
-                        resultSet.getInt("id"),
-                        resultSet.getString("make"),
-                        resultSet.getString("model"),
-                        resultSet.getInt("year"),
-                        resultSet.getDouble("price"),
-                        resultSet.getInt("mileage"),
-                        resultSet.getString("color")
+                        result.getInt("id"),
+                        result.getString("make"),
+                        result.getString("model"),
+                        result.getInt("year"),
+                        result.getDouble("price"),
+                        result.getInt("mileage"),
+                        result.getString("color")
                 );
 
                 cars.add(car);
             }
 
         } catch (SQLException e) {
-
-            System.out.println(
-                    "Could not read cars from the database."
-            );
+            System.out.println("Error retrieving cars: " + e.getMessage());
         }
 
         return cars;
     }
 
+    // Find a car by ID
     public Car findCarById(int id) {
 
-        String sql =
-                "SELECT id, make, model, year, price, mileage, color " +
-                        "FROM cars WHERE id = ?";
+        String sql = "SELECT * FROM cars WHERE id = ?";
 
         try (
                 Connection connection = connect();
@@ -145,33 +135,32 @@ public class DatabaseManager {
 
             statement.setInt(1, id);
 
-            try (ResultSet resultSet =
-                         statement.executeQuery()) {
+            try (ResultSet result = statement.executeQuery()) {
 
-                if (resultSet.next()) {
+                if (result.next()) {
 
                     return new Car(
-                            resultSet.getInt("id"),
-                            resultSet.getString("make"),
-                            resultSet.getString("model"),
-                            resultSet.getInt("year"),
-                            resultSet.getDouble("price"),
-                            resultSet.getInt("mileage"),
-                            resultSet.getString("color")
+                            result.getInt("id"),
+                            result.getString("make"),
+                            result.getString("model"),
+                            result.getInt("year"),
+                            result.getDouble("price"),
+                            result.getInt("mileage"),
+                            result.getString("color")
                     );
                 }
             }
 
         } catch (SQLException e) {
-
-            System.out.println(
-                    "Could not find the car."
-            );
+            System.out.println("Error finding car: " + e.getMessage());
         }
 
         return null;
     }
 
+    // Update a car
+
+    // Update a car without changing its ID.
     public boolean updateCar(
             int id,
             String make,
@@ -181,25 +170,26 @@ public class DatabaseManager {
             int mileage,
             String color) {
 
-        Car.validateData(
-                id,
-                make,
-                model,
-                year,
-                price,
-                mileage,
-                color
+        return updateCar(
+                id, id, make, model, year, price, mileage, color
         );
+    }
 
-        String sql =
-                "UPDATE cars SET " +
-                        "make = ?, " +
-                        "model = ?, " +
-                        "year = ?, " +
-                        "price = ?, " +
-                        "mileage = ?, " +
-                        "color = ? " +
-                        "WHERE id = ?";
+    // Update a car, including changing its ID.
+    public boolean updateCar(
+            int oldId,
+            int newId,
+            String make,
+            String model,
+            int year,
+            double price,
+            int mileage,
+            String color) {
+
+        String sql = "UPDATE cars SET " +
+                "id = ?, make = ?, model = ?, year = ?, " +
+                "price = ?, mileage = ?, color = ? " +
+                "WHERE id = ?";
 
         try (
                 Connection connection = connect();
@@ -207,26 +197,32 @@ public class DatabaseManager {
                         connection.prepareStatement(sql)
         ) {
 
-            statement.setString(1, make.trim());
-            statement.setString(2, model.trim());
-            statement.setInt(3, year);
-            statement.setDouble(4, price);
-            statement.setInt(5, mileage);
-            statement.setString(6, color.trim());
-            statement.setInt(7, id);
+            statement.setInt(1, newId);
+            statement.setString(2, make);
+            statement.setString(3, model);
+            statement.setInt(4, year);
+            statement.setDouble(5, price);
+            statement.setInt(6, mileage);
+            statement.setString(7, color);
+            statement.setInt(8, oldId);
 
             return statement.executeUpdate() > 0;
 
         } catch (SQLException e) {
 
+            System.out.println(
+                    "Error updating car: " + e.getMessage()
+            );
+
             return false;
         }
     }
 
+
+    // Delete a car
     public boolean deleteCar(int id) {
 
-        String sql =
-                "DELETE FROM cars WHERE id = ?";
+        String sql = "DELETE FROM cars WHERE id = ?";
 
         try (
                 Connection connection = connect();
@@ -239,189 +235,76 @@ public class DatabaseManager {
             return statement.executeUpdate() > 0;
 
         } catch (SQLException e) {
-
+            System.out.println("Error deleting car: " + e.getMessage());
             return false;
         }
     }
 
+    // Calculate average car price
     public double calculateAveragePrice() {
 
-        String sql =
-                "SELECT AVG(price) AS average_price FROM cars";
+        String sql = "SELECT AVG(price) FROM cars";
 
         try (
                 Connection connection = connect();
                 Statement statement = connection.createStatement();
-                ResultSet resultSet = statement.executeQuery(sql)
+                ResultSet result = statement.executeQuery(sql)
         ) {
 
-            if (resultSet.next()) {
-                return resultSet.getDouble("average_price");
+            if (result.next()) {
+                return result.getDouble(1);
             }
 
         } catch (SQLException e) {
-
-            System.out.println(
-                    "Could not calculate the average price."
-            );
+            System.out.println("Error calculating average: " + e.getMessage());
         }
 
         return 0.0;
     }
 
-    public int loadFromFile(String filename)
-            throws IOException {
+    // Import cars from a CSV file
+    public int loadFromFile(String filename) throws IOException {
 
-        int recordsLoaded = 0;
-        int lineNumber = 0;
+        int count = 0;
 
-        try (
-                BufferedReader reader =
-                        new BufferedReader(
-                                new FileReader(filename)
-                        )
-        ) {
+        try (BufferedReader reader =
+                     new BufferedReader(new FileReader(filename))) {
 
             String line;
 
             while ((line = reader.readLine()) != null) {
 
-                lineNumber++;
-
-                if (line.trim().isEmpty()) {
-                    continue;
-                }
-
-                String[] data =
-                        line.split(",", -1);
+                String[] data = line.split(",", -1);
 
                 if (data.length != 7) {
-
-                    System.out.println(
-                            "Line " + lineNumber +
-                                    " was skipped because it does not have 7 fields."
-                    );
-
-                    continue;
-                }
-
-                String idText = data[0].trim();
-                String make = data[1].trim();
-                String model = data[2].trim();
-                String yearText = data[3].trim();
-                String priceText = data[4].trim();
-                String mileageText = data[5].trim();
-                String color = data[6].trim();
-
-                if (!idText.matches("[0-9]+")) {
-
-                    System.out.println(
-                            "Line " + lineNumber +
-                                    " was skipped: ID must contain numbers only."
-                    );
-
-                    continue;
-                }
-
-                if (!yearText.matches("[0-9]{4}")) {
-
-                    System.out.println(
-                            "Line " + lineNumber +
-                                    " was skipped: Year must contain exactly 4 digits."
-                    );
-
-                    continue;
-                }
-
-                if (!priceText.matches("[0-9]+(\\.[0-9]+)?")) {
-
-                    System.out.println(
-                            "Line " + lineNumber +
-                                    " was skipped: Price must be a valid number."
-                    );
-
-                    continue;
-                }
-
-                if (!mileageText.matches("[0-9]+")) {
-
-                    System.out.println(
-                            "Line " + lineNumber +
-                                    " was skipped: Mileage must contain numbers only."
-                    );
-
                     continue;
                 }
 
                 try {
 
-                    int id = Integer.parseInt(idText);
-                    int year = Integer.parseInt(yearText);
-                    double price =
-                            Double.parseDouble(priceText);
-                    int mileage =
-                            Integer.parseInt(mileageText);
+                    int id = Integer.parseInt(data[0].trim());
+                    String make = data[1].trim();
+                    String model = data[2].trim();
+                    int year = Integer.parseInt(data[3].trim());
+                    double price = Double.parseDouble(data[4].trim());
+                    int mileage = Integer.parseInt(data[5].trim());
+                    String color = data[6].trim();
 
                     Car car = new Car(
-                            id,
-                            make,
-                            model,
-                            year,
-                            price,
-                            mileage,
-                            color
+                            id, make, model, year,
+                            price, mileage, color
                     );
 
                     if (addCar(car)) {
-
-                        recordsLoaded++;
-
-                    } else {
-
-                        System.out.println(
-                                "Line " + lineNumber +
-                                        " was skipped: A car with ID " +
-                                        id + " already exists."
-                        );
+                        count++;
                     }
 
-                } catch (IllegalArgumentException e) {
-
-                    System.out.println(
-                            "Line " + lineNumber +
-                                    " was skipped: " +
-                                    e.getMessage()
-                    );
+                } catch (NumberFormatException e) {
+                    System.out.println("Skipping invalid car record.");
                 }
             }
         }
 
-        return recordsLoaded;
-    }
-
-    public static void main(String[] args) {
-
-        DatabaseManager database =
-                new DatabaseManager();
-
-        try (
-                Connection connection =
-                        database.connect()
-        ) {
-
-            System.out.println(
-                    "SQLite connection test passed."
-            );
-
-        } catch (SQLException e) {
-
-            System.out.println(
-                    "SQLite connection test failed."
-            );
-
-            System.out.println(
-                    "Error: " + e.getMessage()
-            );
-        }
+        return count;
     }
 }

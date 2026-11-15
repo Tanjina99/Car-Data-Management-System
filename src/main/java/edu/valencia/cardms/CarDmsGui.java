@@ -1,401 +1,666 @@
+
 package edu.valencia.cardms;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.TitledBorder;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.DefaultTableCellRenderer;
+
 import java.awt.*;
-import java.awt.event.ActionEvent;
+import java.awt.event.*;
+import java.io.File;
 import java.io.IOException;
+import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.List;
 
 public class CarDmsGui extends JFrame {
 
-    private final CarManager manager =
-            new CarManager();
-    // Form input components
+    // Application color theme
+    private static final Color APP_BACKGROUND =
+            new Color(197, 217, 236);
+
+    private static final Color PANEL_BACKGROUND =
+            new Color(220, 234, 246);
+
+    private static final Color HEADER_COLOR =
+            new Color(20, 45, 73);
+
+    private static final Color GLOW_COLOR =
+            new Color(0, 200, 255);
+
+    private static final Color TEXT_COLOR =
+            new Color(25, 45, 65);
+
+    private static final Color HOVER_COLOR =
+            new Color(188, 212, 230);
+
+    // Database manager
+    private final CarManager manager = new CarManager();
+
+    // Form fields
     private JTextField idField;
     private JComboBox<String> makeBox;
     private JTextField modelField;
     private JTextField yearField;
     private JTextField priceField;
     private JTextField mileageField;
-    //First entry is the "Select Color" placeholder, which is rejected on submit
     private JComboBox<String> colorBox;
 
+    // Table
     private JTable carTable;
-    //Backing model for carTable; cells are read-only.
     private DefaultTableModel tableModel;
 
-    //creates the main window, builds the interface, and loads the initial table data.
+    // Tracks the hovered table row
+    private int hoveredRow = -1;
+
+    // Remembers the original ID of a selected car
+    private Integer selectedCarId = null;
+
+
+    // Custom blue glowing buttons
+    private static class OrbButton extends JButton {
+
+        private final Color baseColor;
+
+        public OrbButton(String text, Color color, int width) {
+
+            super(text);
+
+            baseColor = color;
+
+            setForeground(Color.WHITE);
+            setFont(new Font("Arial", Font.BOLD, 13));
+            setPreferredSize(new Dimension(width, 38));
+
+            setFocusPainted(false);
+            setContentAreaFilled(false);
+            setBorderPainted(false);
+            setOpaque(false);
+
+            setRolloverEnabled(true);
+            setCursor(new Cursor(Cursor.HAND_CURSOR));
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+
+            Graphics2D g2 = (Graphics2D) g.create();
+
+            g2.setRenderingHint(
+                    RenderingHints.KEY_ANTIALIASING,
+                    RenderingHints.VALUE_ANTIALIAS_ON
+            );
+
+            int width = getWidth();
+            int height = getHeight();
+
+            boolean hover = getModel().isRollover();
+            boolean pressed = getModel().isPressed();
+
+            // Glowing border
+            for (int i = 8; i >= 2; i -= 3) {
+
+                g2.setColor(new Color(
+                        0, 190, 255, hover ? 45 : 20
+                ));
+
+                g2.setStroke(new BasicStroke(i));
+
+                g2.drawRoundRect(
+                        5, 5, width - 11, height - 11, 25, 25
+                );
+            }
+
+            Color top = baseColor.brighter();
+            Color bottom = baseColor.darker();
+
+            if (hover) {
+                top = top.brighter();
+                bottom = baseColor;
+            }
+
+            if (pressed) {
+                top = baseColor.darker();
+                bottom = baseColor.darker().darker();
+            }
+
+            // Gradient background
+            g2.setPaint(new GradientPaint(
+                    0, 0, top,
+                    0, height, bottom
+            ));
+
+            g2.fillRoundRect(
+                    5, 5, width - 11, height - 11, 25, 25
+            );
+
+            // Cyan outline
+            g2.setColor(GLOW_COLOR);
+            g2.setStroke(new BasicStroke(1.5f));
+
+            g2.drawRoundRect(
+                    5, 5, width - 11, height - 11, 25, 25
+            );
+
+            g2.dispose();
+
+            super.paintComponent(g);
+        }
+    }
+
+
+    // Constructor
     public CarDmsGui() {
 
         setTitle("Car Data Management System");
         setSize(1000, 650);
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+
+        // Ask before closing the application
+        setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+
+        addWindowListener(new WindowAdapter() {
+
+            @Override
+            public void windowClosing(WindowEvent e) {
+                exitApplication();
+            }
+        });
+
         setLocationRelativeTo(null);
 
+        // Connect to the selected database
+        connectToDatabase();
+
+        // Create the GUI
         createInterface();
+
+        // Create the menu
+        createMenuBar();
+
+        // Display database records
         refreshTable();
     }
 
+
+    // Let the user select the SQLite database
+    private void connectToDatabase() {
+
+        while (true) {
+
+            JFileChooser chooser = new JFileChooser();
+
+            chooser.setDialogTitle("Select SQLite Database");
+            chooser.setFileSelectionMode(
+                    JFileChooser.FILES_ONLY
+            );
+
+            int result = chooser.showOpenDialog(this);
+
+            // Handle cancellation
+            if (result != JFileChooser.APPROVE_OPTION) {
+
+                int answer = JOptionPane.showConfirmDialog(
+                        this,
+                        "No database was selected. Do you want to exit?",
+                        "Database Required",
+                        JOptionPane.YES_NO_OPTION
+                );
+
+                if (answer == JOptionPane.YES_OPTION) {
+                    System.exit(0);
+                }
+
+                continue;
+            }
+
+            File selectedFile = chooser.getSelectedFile();
+
+            // Check the selected file
+            if (selectedFile == null ||
+                    !selectedFile.isFile() ||
+                    !selectedFile.canRead()) {
+
+                JOptionPane.showMessageDialog(
+                        this,
+                        "Please select a valid, readable database file.",
+                        "Invalid Database",
+                        JOptionPane.ERROR_MESSAGE
+                );
+
+                continue;
+            }
+
+            try {
+
+                // Connect to the selected database
+                DatabaseManager database =
+                        new DatabaseManager(
+                                selectedFile.getAbsolutePath()
+                        );
+
+                // Give the database to CarManager
+                manager.setDatabaseManager(database);
+
+                JOptionPane.showMessageDialog(
+                        this,
+                        "Database connected successfully!",
+                        "Database Connection",
+                        JOptionPane.INFORMATION_MESSAGE
+                );
+
+                return;
+
+            } catch (SQLException | IllegalArgumentException e) {
+
+                JOptionPane.showMessageDialog(
+                        this,
+                        "Could not connect to the database.\n"
+                                + e.getMessage(),
+                        "Database Error",
+                        JOptionPane.ERROR_MESSAGE
+                );
+            }
+        }
+    }
+
+
+    // Create the application menu
+    private void createMenuBar() {
+
+        JMenuBar menuBar = new JMenuBar();
+
+        JMenu fileMenu = new JMenu("File");
+        JMenu carMenu = new JMenu("Car Operations");
+
+        JMenuItem addItem = new JMenuItem("Add Car");
+        JMenuItem displayItem = new JMenuItem("Display Cars");
+        JMenuItem updateItem = new JMenuItem("Update Car");
+        JMenuItem deleteItem = new JMenuItem("Delete Car");
+        JMenuItem importItem = new JMenuItem("Import Cars");
+        JMenuItem averageItem = new JMenuItem("Average Price");
+        JMenuItem clearItem = new JMenuItem("Clear Form");
+        JMenuItem exitItem = new JMenuItem("Exit");
+
+        addItem.addActionListener(e -> addCar());
+        displayItem.addActionListener(e -> displayCars());
+        updateItem.addActionListener(e -> updateCar());
+        deleteItem.addActionListener(e -> deleteCar());
+        importItem.addActionListener(e -> importCars());
+        averageItem.addActionListener(e -> showAveragePrice());
+        clearItem.addActionListener(e -> clearFields());
+        exitItem.addActionListener(e -> exitApplication());
+
+        carMenu.add(addItem);
+        carMenu.add(displayItem);
+        carMenu.add(updateItem);
+        carMenu.add(deleteItem);
+        carMenu.addSeparator();
+        carMenu.add(importItem);
+        carMenu.add(averageItem);
+        carMenu.add(clearItem);
+
+        fileMenu.add(exitItem);
+
+        menuBar.add(fileMenu);
+        menuBar.add(carMenu);
+
+        setJMenuBar(menuBar);
+    }
+
+
+    // Create the existing blue GUI
     private void createInterface() {
 
-        JPanel mainPanel =
-                new JPanel(new BorderLayout(15, 15));
+        JPanel mainPanel = new JPanel(
+                new BorderLayout(15, 15)
+        );
 
         mainPanel.setBorder(
                 new EmptyBorder(15, 15, 15, 15)
         );
 
+        mainPanel.setBackground(APP_BACKGROUND);
+        getContentPane().setBackground(APP_BACKGROUND);
+
+        // Header
         JLabel titleLabel = new JLabel(
                 "Car Data Management System",
                 SwingConstants.CENTER
+        );
+
+        titleLabel.setOpaque(true);
+        titleLabel.setBackground(HEADER_COLOR);
+        titleLabel.setForeground(Color.WHITE);
+        titleLabel.setBorder(
+                new EmptyBorder(12, 8, 12, 8)
         );
 
         titleLabel.setFont(
                 new Font("Arial", Font.BOLD, 24)
         );
 
-        mainPanel.add(
-                titleLabel,
-                BorderLayout.NORTH
-        );
+        mainPanel.add(titleLabel, BorderLayout.NORTH);
 
-        JPanel formPanel =
-                new JPanel(
-                        new GridLayout(7, 2, 10, 10)
-                );
+
+        // Car information form
+        JPanel formPanel = new JPanel(
+                new GridLayout(7, 2, 10, 10)
+        );
 
         formPanel.setBorder(
                 new TitledBorder("Car Information")
         );
 
+        formPanel.setBackground(PANEL_BACKGROUND);
+
         idField = new JTextField();
-        // Make list is fixed; the first entry is selected by default.
+
         String[] makes = {
-                "Toyota",
-                "Honda",
-                "Ford",
-                "Chevrolet",
-                "Nissan",
-                "Hyundai",
-                "Kia",
-                "Mazda",
-                "Subaru",
-                "Volkswagen",
-                "BMW",
-                "Mercedes-Benz",
-                "Audi",
-                "Lexus",
-                "Acura",
-                "Infiniti",
-                "Volvo",
-                "Tesla",
-                "Jeep",
-                "Dodge",
-                "Chrysler",
-                "Ram",
-                "GMC",
-                "Cadillac",
-                "Buick",
-                "Lincoln",
-                "Porsche",
-                "Ferrari",
-                "Lamborghini",
-                "Maserati"
+                "Toyota", "Honda", "Ford", "Chevrolet", "Nissan",
+                "Hyundai", "Kia", "Mazda", "Subaru", "Volkswagen",
+                "BMW", "Mercedes-Benz", "Audi", "Lexus", "Acura",
+                "Infiniti", "Volvo", "Tesla", "Jeep", "Dodge",
+                "Chrysler", "Ram", "GMC", "Cadillac", "Buick",
+                "Lincoln", "Porsche", "Ferrari", "Lamborghini", "Maserati"
         };
 
-        makeBox =
-                new JComboBox<>(makes);
+        makeBox = new JComboBox<>(makes);
 
         modelField = new JTextField();
         yearField = new JTextField();
         priceField = new JTextField();
         mileageField = new JTextField();
-        // Index 0 is a placeholder and must not be accepted as a real color.
+
         String[] colors = {
-                "Select Color",
-                "Black",
-                "White",
-                "Red",
-                "Blue",
-                "Gray",
-                "Silver",
-                "Green",
-                "Yellow",
-                "Orange",
-                "Brown",
-                "Beige",
-                "Gold",
-                "Purple"
+                "Select Color", "Black", "White", "Red", "Blue",
+                "Gray", "Silver", "Green", "Yellow", "Orange",
+                "Brown", "Beige", "Gold", "Purple"
         };
 
-        colorBox =
-                new JComboBox<>(colors);
+        colorBox = new JComboBox<>(colors);
 
-        formPanel.add(
-                new JLabel("ID:")
-        );
+        formPanel.add(new JLabel("ID:"));
+        formPanel.add(idField);
 
-        formPanel.add(
-                idField
-        );
+        formPanel.add(new JLabel("Make:"));
+        formPanel.add(makeBox);
 
-        formPanel.add(
-                new JLabel("Make:")
-        );
+        formPanel.add(new JLabel("Model:"));
+        formPanel.add(modelField);
 
-        formPanel.add(
-                makeBox
-        );
+        formPanel.add(new JLabel("Year:"));
+        formPanel.add(yearField);
 
-        formPanel.add(
-                new JLabel("Model:")
-        );
+        formPanel.add(new JLabel("Price:"));
+        formPanel.add(priceField);
 
-        formPanel.add(
-                modelField
-        );
+        formPanel.add(new JLabel("Mileage:"));
+        formPanel.add(mileageField);
 
-        formPanel.add(
-                new JLabel("Year:")
-        );
+        formPanel.add(new JLabel("Color:"));
+        formPanel.add(colorBox);
 
-        formPanel.add(
-                yearField
-        );
+        for (Component component : formPanel.getComponents()) {
 
-        formPanel.add(
-                new JLabel("Price:")
-        );
+            if (component instanceof JLabel) {
+                component.setForeground(TEXT_COLOR);
+            }
+        }
 
-        formPanel.add(
-                priceField
-        );
 
-        formPanel.add(
-                new JLabel("Mileage:")
-        );
-
-        formPanel.add(
-                mileageField
-        );
-
-        formPanel.add(
-                new JLabel("Color:")
-        );
-
-        formPanel.add(
-                colorBox
-        );
-
+        // Buttons
         JButton addButton =
-                new JButton("Add Car");
+                new OrbButton("Add Car", HEADER_COLOR, 120);
+
+        JButton displayButton =
+                new OrbButton("Display Cars", HEADER_COLOR, 125);
 
         JButton updateButton =
-                new JButton("Update Car");
+                new OrbButton("Update Car", HEADER_COLOR, 130);
 
         JButton deleteButton =
-                new JButton("Delete Car");
+                new OrbButton("Delete Car", HEADER_COLOR, 120);
 
         JButton clearButton =
-                new JButton("Clear");
+                new OrbButton("Clear", HEADER_COLOR, 100);
 
         JButton importButton =
-                new JButton("Import Cars");
+                new OrbButton("Import Cars", HEADER_COLOR, 125);
 
         JButton averageButton =
-                new JButton("Average Price");
-        JButton exitButton =
-                new JButton("Exit");
+                new OrbButton("Average Price", HEADER_COLOR, 135);
 
-        JPanel buttonPanel =
-                new JPanel(
-                        new FlowLayout(
-                                FlowLayout.CENTER,
-                                10,
-                                8
-                        )
-                );
+        JButton exitButton =
+                new OrbButton("Exit", HEADER_COLOR, 90);
+
+
+        JPanel buttonPanel = new JPanel(
+                new FlowLayout(FlowLayout.CENTER, 10, 8)
+        );
+
+        buttonPanel.setBackground(APP_BACKGROUND);
 
         buttonPanel.add(addButton);
         buttonPanel.add(updateButton);
         buttonPanel.add(deleteButton);
         buttonPanel.add(clearButton);
 
-        JPanel extraButtonPanel =
-                new JPanel(
-                        new FlowLayout(
-                                FlowLayout.CENTER,
-                                10,
-                                8
-                        )
-                );
 
-        extraButtonPanel.add(
-                importButton
+        JPanel extraButtonPanel = new JPanel(
+                new FlowLayout(FlowLayout.CENTER, 10, 8)
         );
 
-        extraButtonPanel.add(
-                averageButton
-        );
-        extraButtonPanel.add(
-                exitButton
-        );
+        extraButtonPanel.setBackground(APP_BACKGROUND);
 
-        JPanel leftPanel =
-                new JPanel(
-                        new BorderLayout(10, 10)
-                );
+        extraButtonPanel.add(displayButton);
+        extraButtonPanel.add(importButton);
+        extraButtonPanel.add(averageButton);
+        extraButtonPanel.add(exitButton);
 
-        leftPanel.add(
-                formPanel,
-                BorderLayout.CENTER
+
+        JPanel allButtonsPanel = new JPanel(
+                new BorderLayout()
         );
 
-        JPanel allButtonsPanel =
-                new JPanel(
-                        new BorderLayout()
-                );
+        allButtonsPanel.setBackground(APP_BACKGROUND);
+        allButtonsPanel.add(buttonPanel, BorderLayout.NORTH);
+        allButtonsPanel.add(extraButtonPanel, BorderLayout.SOUTH);
 
-        allButtonsPanel.add(
-                buttonPanel,
-                BorderLayout.NORTH
+
+        JPanel leftPanel = new JPanel(
+                new BorderLayout(10, 10)
         );
 
-        allButtonsPanel.add(
-                extraButtonPanel,
-                BorderLayout.SOUTH
+        leftPanel.setBackground(APP_BACKGROUND);
+        leftPanel.add(formPanel, BorderLayout.CENTER);
+        leftPanel.add(allButtonsPanel, BorderLayout.SOUTH);
+
+
+        // Table model
+        tableModel = new DefaultTableModel(
+                new String[]{
+                        "ID", "Make", "Model", "Year",
+                        "Price", "Mileage", "Color"
+                },
+                0
+        ) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+
+        carTable = new JTable(tableModel);
+
+        carTable.setRowHeight(25);
+        carTable.setBackground(Color.WHITE);
+        carTable.setForeground(TEXT_COLOR);
+        carTable.setSelectionBackground(HOVER_COLOR);
+        carTable.setSelectionForeground(Color.BLACK);
+        carTable.setGridColor(PANEL_BACKGROUND);
+        carTable.setFillsViewportHeight(true);
+
+        carTable.setSelectionMode(
+                ListSelectionModel.SINGLE_SELECTION
         );
 
-        leftPanel.add(
-                allButtonsPanel,
-                BorderLayout.SOUTH
+        carTable.getTableHeader().setBackground(HEADER_COLOR);
+        carTable.getTableHeader().setForeground(Color.WHITE);
+        carTable.getTableHeader().setOpaque(true);
+
+        carTable.getTableHeader().setFont(
+                new Font("Arial", Font.BOLD, 13)
         );
-        // Table cells are not editable; edits happen through the form.
-        tableModel =
-                new DefaultTableModel(
-                        new String[]{
-                                "ID",
-                                "Make",
-                                "Model",
-                                "Year",
-                                "Price",
-                                "Mileage",
-                                "Color"
-                        },
-                        0
-                ) {
+
+
+        // Light blue hover renderer
+        DefaultTableCellRenderer hoverRenderer =
+                new DefaultTableCellRenderer() {
 
                     @Override
-                    public boolean isCellEditable(
+                    public Component getTableCellRendererComponent(
+                            JTable table,
+                            Object value,
+                            boolean isSelected,
+                            boolean hasFocus,
                             int row,
                             int column) {
 
-                        return false;
+                        Component component =
+                                super.getTableCellRendererComponent(
+                                        table,
+                                        value,
+                                        isSelected,
+                                        hasFocus,
+                                        row,
+                                        column
+                                );
+
+                        if (isSelected) {
+
+                            component.setBackground(HOVER_COLOR);
+                            component.setForeground(Color.BLACK);
+
+                        } else if (row == hoveredRow) {
+
+                            component.setBackground(HOVER_COLOR);
+                            component.setForeground(TEXT_COLOR);
+
+                        } else {
+
+                            component.setBackground(Color.WHITE);
+                            component.setForeground(TEXT_COLOR);
+                        }
+
+                        return component;
                     }
                 };
 
-        carTable =
-                new JTable(tableModel);
 
-        carTable.setRowHeight(25);
+        // Apply renderer to all columns
+        for (int i = 0; i < carTable.getColumnCount(); i++) {
 
-        carTable.getTableHeader().setFont(
-                new Font(
-                        "Arial",
-                        Font.BOLD,
-                        13
-                )
-        );
+            carTable.getColumnModel()
+                    .getColumn(i)
+                    .setCellRenderer(hoverRenderer);
+        }
 
-        JScrollPane tableScrollPane =
-                new JScrollPane(carTable);
+
+        // Mouse hover listener
+        carTable.addMouseMotionListener(new MouseAdapter() {
+
+            @Override
+            public void mouseMoved(MouseEvent e) {
+
+                int row = carTable.rowAtPoint(e.getPoint());
+
+                if (row != hoveredRow) {
+
+                    hoveredRow = row;
+                    carTable.repaint();
+                }
+            }
+        });
+
+
+        // Remove hover when the mouse leaves the table
+        carTable.addMouseListener(new MouseAdapter() {
+
+            @Override
+            public void mouseExited(MouseEvent e) {
+
+                hoveredRow = -1;
+                carTable.repaint();
+            }
+        });
+
+
+        JScrollPane tableScrollPane = new JScrollPane(carTable);
 
         tableScrollPane.setBorder(
                 new TitledBorder("Cars")
         );
 
-        JPanel centerPanel =
-                new JPanel(
-                        new BorderLayout(15, 15)
-                );
 
-        centerPanel.add(
-                leftPanel,
-                BorderLayout.WEST
+        // Center layout
+        JPanel centerPanel = new JPanel(
+                new BorderLayout(15, 15)
         );
 
-        centerPanel.add(
-                tableScrollPane,
-                BorderLayout.CENTER
-        );
+        centerPanel.setBackground(APP_BACKGROUND);
+        centerPanel.add(leftPanel, BorderLayout.WEST);
+        centerPanel.add(tableScrollPane, BorderLayout.CENTER);
 
-        mainPanel.add(
-                centerPanel,
-                BorderLayout.CENTER
-        );
+        mainPanel.add(centerPanel, BorderLayout.CENTER);
 
         add(mainPanel);
 
-        addButton.addActionListener(
-                e -> addCar()
-        );
 
-        updateButton.addActionListener(
-                e -> updateCar()
-        );
+        // Button actions
+        addButton.addActionListener(e -> addCar());
+        displayButton.addActionListener(e -> displayCars());
+        updateButton.addActionListener(e -> updateCar());
+        deleteButton.addActionListener(e -> deleteCar());
+        clearButton.addActionListener(e -> clearFields());
+        importButton.addActionListener(e -> importCars());
+        averageButton.addActionListener(e -> showAveragePrice());
+        exitButton.addActionListener(e -> exitApplication());
 
-        deleteButton.addActionListener(
-                e -> deleteCar()
-        );
 
-        clearButton.addActionListener(
-                e -> clearFields()
-        );
+        // Load selected car into the form
+        carTable.getSelectionModel().addListSelectionListener(e -> {
 
-        importButton.addActionListener(
-                e -> importCars()
-        );
-
-        averageButton.addActionListener(
-                e -> showAveragePrice()
-        );
-        exitButton.addActionListener(e -> {
-            int answer = JOptionPane.showConfirmDialog(
-                    this,
-                    "Are you sure you want to exit?",
-                    "Exit Application",
-                    JOptionPane.YES_NO_OPTION
-            );
-
-            if (answer == JOptionPane.YES_OPTION) {
-                System.exit(0);
+            if (!e.getValueIsAdjusting()) {
+                loadSelectedCar();
             }
         });
-
-        //Populate the form when a row is selected. getValueIsAdjusting()
-        // filters out intermediate events so the form loads only once.
-        carTable.getSelectionModel()
-                .addListSelectionListener(e -> {
-
-                    if (!e.getValueIsAdjusting()) {
-                        loadSelectedCar();
-                    }
-                });
     }
 
+    
+    // Display all cars and show the total number of records.
+    private void displayCars() {
+
+        List<Car> cars = manager.getAllCars();
+
+        refreshTable();
+
+        JOptionPane.showMessageDialog(
+                this,
+                "Total cars in database: " + cars.size(),
+                "Database Records",
+                JOptionPane.INFORMATION_MESSAGE
+        );
+    }
+
+
+    // ADD CAR
     private void addCar() {
 
         try {
 
-            int id =
-                    readPositiveInt(
-                            idField.getText(),
-                            "ID"
-                    );
+            int id = readPositiveInt(idField.getText(), "ID");
 
             if (manager.findCarById(id) != null) {
 
@@ -409,43 +674,23 @@ public class CarDmsGui extends JFrame {
                 return;
             }
 
-            String make =
-                    (String) makeBox.getSelectedItem();
+            String make = (String) makeBox.getSelectedItem();
 
-            String model =
-                    readText(
-                            modelField.getText(),
-                            "Model"
-                    );
+            String model = readText(
+                    modelField.getText(), "Model"
+            );
 
-            int year =
-                    readYear(
-                            yearField.getText()
-                    );
+            int year = readYear(yearField.getText());
 
-            double price =
-                    readPrice(
-                            priceField.getText()
-                    );
+            double price = readPrice(priceField.getText());
 
-            int mileage =
-                    readMileage(
-                            mileageField.getText()
-                    );
+            int mileage = readMileage(mileageField.getText());
 
-            String color =
-                    getSelectedColor();
+            String color = getSelectedColor();
 
-            Car car =
-                    new Car(
-                            id,
-                            make,
-                            model,
-                            year,
-                            price,
-                            mileage,
-                            color
-                    );
+            Car car = new Car(
+                    id, make, model, year, price, mileage, color
+            );
 
             if (manager.addCar(car)) {
 
@@ -463,7 +708,7 @@ public class CarDmsGui extends JFrame {
 
                 JOptionPane.showMessageDialog(
                         this,
-                        "Car could not be added.",
+                        "Car could not be added. Check the database.",
                         "Add Car",
                         JOptionPane.WARNING_MESSAGE
                 );
@@ -480,17 +725,29 @@ public class CarDmsGui extends JFrame {
         }
     }
 
+
+    // UPDATE CAR
     private void updateCar() {
 
         try {
 
-            int id =
-                    readPositiveInt(
-                            idField.getText(),
-                            "ID"
-                    );
+            // Get the original ID of the selected car.
+            int oldId;
 
-            if (manager.findCarById(id) == null) {
+            if (selectedCarId != null) {
+                oldId = selectedCarId;
+            } else {
+                oldId = readPositiveInt(
+                        idField.getText(), "ID"
+                );
+            }
+
+            // Get the new ID from the form.
+            int newId = readPositiveInt(
+                    idField.getText(), "ID"
+            );
+
+            if (manager.findCarById(oldId) == null) {
 
                 JOptionPane.showMessageDialog(
                         this,
@@ -502,43 +759,44 @@ public class CarDmsGui extends JFrame {
                 return;
             }
 
-            String make =
-                    (String) makeBox.getSelectedItem();
+            // Check whether another car already has the new ID.
+            if (newId != oldId &&
+                    manager.findCarById(newId) != null) {
 
-            String model =
-                    readText(
-                            modelField.getText(),
-                            "Model"
-                    );
+                JOptionPane.showMessageDialog(
+                        this,
+                        "That ID already belongs to another car.",
+                        "Invalid ID",
+                        JOptionPane.WARNING_MESSAGE
+                );
 
-            int year =
-                    readYear(
-                            yearField.getText()
-                    );
+                return;
+            }
 
-            double price =
-                    readPrice(
-                            priceField.getText()
-                    );
+            String make = (String) makeBox.getSelectedItem();
 
-            int mileage =
-                    readMileage(
-                            mileageField.getText()
-                    );
+            String model = readText(
+                    modelField.getText(), "Model"
+            );
 
-            String color =
-                    getSelectedColor();
+            int year = readYear(yearField.getText());
 
-            boolean updated =
-                    manager.updateCar(
-                            id,
-                            make,
-                            model,
-                            year,
-                            price,
-                            mileage,
-                            color
-                    );
+            double price = readPrice(priceField.getText());
+
+            int mileage = readMileage(mileageField.getText());
+
+            String color = getSelectedColor();
+
+            boolean updated = manager.updateCar(
+                    oldId,
+                    newId,
+                    make,
+                    model,
+                    year,
+                    price,
+                    mileage,
+                    color
+            );
 
             if (updated) {
 
@@ -573,18 +831,17 @@ public class CarDmsGui extends JFrame {
         }
     }
 
+
+    // DELETE CAR
     private void deleteCar() {
 
         try {
 
-            int id =
-                    readPositiveInt(
-                            idField.getText(),
-                            "ID"
-                    );
+            int id = readPositiveInt(
+                    idField.getText(), "ID"
+            );
 
-            Car car =
-                    manager.findCarById(id);
+            Car car = manager.findCarById(id);
 
             if (car == null) {
 
@@ -598,30 +855,36 @@ public class CarDmsGui extends JFrame {
                 return;
             }
 
-            int answer =
-                    JOptionPane.showConfirmDialog(
+            int answer = JOptionPane.showConfirmDialog(
+                    this,
+                    "Are you sure you want to delete car ID " + id + "?",
+                    "Delete Car",
+                    JOptionPane.YES_NO_OPTION
+            );
+
+            if (answer == JOptionPane.YES_OPTION) {
+
+                if (manager.deleteCar(id)) {
+
+                    JOptionPane.showMessageDialog(
                             this,
-                            "Are you sure you want to delete car ID "
-                                    + id
-                                    + "?",
+                            "Car deleted successfully.",
                             "Delete Car",
-                            JOptionPane.YES_NO_OPTION
+                            JOptionPane.INFORMATION_MESSAGE
                     );
 
-            if (answer ==
-                    JOptionPane.YES_OPTION) {
+                    refreshTable();
+                    clearFields();
 
-                manager.deleteCar(id);
+                } else {
 
-                JOptionPane.showMessageDialog(
-                        this,
-                        "Car deleted successfully.",
-                        "Delete Car",
-                        JOptionPane.INFORMATION_MESSAGE
-                );
-
-                refreshTable();
-                clearFields();
+                    JOptionPane.showMessageDialog(
+                            this,
+                            "Car could not be deleted.",
+                            "Delete Car",
+                            JOptionPane.WARNING_MESSAGE
+                    );
+                }
             }
 
         } catch (IllegalArgumentException e) {
@@ -635,35 +898,68 @@ public class CarDmsGui extends JFrame {
         }
     }
 
+
+    // IMPORT CARS
+// Import cars from a text file into SQLite.
     private void importCars() {
 
-        JFileChooser fileChooser =
-                new JFileChooser();
+        JFileChooser fileChooser = new JFileChooser();
 
-        int result =
-                fileChooser.showOpenDialog(this);
+        fileChooser.setDialogTitle("Select Car Data File");
 
-        if (result !=
-                JFileChooser.APPROVE_OPTION) {
+        int result = fileChooser.showOpenDialog(this);
+
+        if (result != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+
+        File selectedFile = fileChooser.getSelectedFile();
+
+        // Check that the file exists and can be read.
+        // Check the selected file.
+        if (selectedFile == null) {
+
+            JOptionPane.showMessageDialog(
+                    this,
+                    "No file was selected.",
+                    "File Error",
+                    JOptionPane.ERROR_MESSAGE
+            );
+
+            return;
+        }
+
+        String details =
+                "Selected path: " + selectedFile.getAbsolutePath() +
+                        "\nFile exists: " + selectedFile.exists() +
+                        "\nIs a file: " + selectedFile.isFile() +
+                        "\nCan read: " + selectedFile.canRead();
+
+        if (!selectedFile.exists() ||
+                !selectedFile.isFile() ||
+                !selectedFile.canRead()) {
+
+            JOptionPane.showMessageDialog(
+                    this,
+                    details,
+                    "File Information",
+                    JOptionPane.ERROR_MESSAGE
+            );
 
             return;
         }
 
         try {
 
-            int count =
-                    manager.loadFromFile(
-                            fileChooser
-                                    .getSelectedFile()
-                                    .getAbsolutePath()
-                    );
+            int count = manager.loadFromFile(
+                    selectedFile.getAbsolutePath()
+            );
 
             refreshTable();
 
             JOptionPane.showMessageDialog(
                     this,
-                    count
-                            + " car(s) imported successfully.",
+                    count + " car(s) imported successfully.",
                     "Import Cars",
                     JOptionPane.INFORMATION_MESSAGE
             );
@@ -672,17 +968,19 @@ public class CarDmsGui extends JFrame {
 
             JOptionPane.showMessageDialog(
                     this,
-                    "Could not open the file.",
+                    "Import failed:\n" + e.getMessage()
+                            + "\n\nFile: "
+                            + selectedFile.getAbsolutePath(),
                     "File Error",
                     JOptionPane.ERROR_MESSAGE
             );
         }
     }
 
+    // CUSTOM FEATURE: AVERAGE PRICE
     private void showAveragePrice() {
 
-        List<Car> cars =
-                manager.getAllCars();
+        List<Car> cars = manager.getAllCars();
 
         if (cars.isEmpty()) {
 
@@ -696,118 +994,96 @@ public class CarDmsGui extends JFrame {
             return;
         }
 
-        double average =
-                manager.calculateAveragePrice();
+        double average = manager.calculateAveragePrice();
 
         JOptionPane.showMessageDialog(
                 this,
-                String.format(
-                        "Average car price: $%.2f",
-                        average
-                ),
+                String.format("Average car price: $%.2f", average),
                 "Average Price",
                 JOptionPane.INFORMATION_MESSAGE
         );
     }
 
+
+    // LOAD SELECTED CAR
     private void loadSelectedCar() {
 
-        int selectedRow =
-                carTable.getSelectedRow();
+        int selectedRow = carTable.getSelectedRow();
 
         if (selectedRow == -1) {
+
+            selectedCarId = null;
             return;
         }
 
+        // Convert the view row to the model row.
+        int modelRow =
+                carTable.convertRowIndexToModel(selectedRow);
+
+        // Remember the original ID for updates.
+        selectedCarId = Integer.parseInt(
+                tableModel.getValueAt(modelRow, 0).toString()
+        );
+
         idField.setText(
-                tableModel
-                        .getValueAt(
-                                selectedRow,
-                                0
-                        )
-                        .toString()
+                tableModel.getValueAt(modelRow, 0).toString()
         );
 
         makeBox.setSelectedItem(
-                tableModel
-                        .getValueAt(
-                                selectedRow,
-                                1
-                        )
-                        .toString()
+                tableModel.getValueAt(modelRow, 1).toString()
         );
 
         modelField.setText(
-                tableModel
-                        .getValueAt(
-                                selectedRow,
-                                2
-                        )
-                        .toString()
+                tableModel.getValueAt(modelRow, 2).toString()
         );
 
         yearField.setText(
-                tableModel
-                        .getValueAt(
-                                selectedRow,
-                                3
-                        )
-                        .toString()
+                tableModel.getValueAt(modelRow, 3).toString()
         );
 
         priceField.setText(
-                tableModel
-                        .getValueAt(
-                                selectedRow,
-                                4
-                        )
-                        .toString()
+                tableModel.getValueAt(modelRow, 4).toString()
         );
 
         mileageField.setText(
-                tableModel
-                        .getValueAt(
-                                selectedRow,
-                                5
-                        )
-                        .toString()
+                tableModel.getValueAt(modelRow, 5).toString()
         );
 
         colorBox.setSelectedItem(
-                tableModel
-                        .getValueAt(
-                                selectedRow,
-                                6
-                        )
-                        .toString()
+                tableModel.getValueAt(modelRow, 6).toString()
         );
     }
 
+
+    // REFRESH TABLE
     private void refreshTable() {
 
         tableModel.setRowCount(0);
 
-        for (Car car :
-                manager.getAllCars()) {
+        hoveredRow = -1;
 
-            tableModel.addRow(
-                    new Object[]{
-                            car.getId(),
-                            car.getMake(),
-                            car.getModel(),
-                            car.getYear(),
-                            String.format(
-                                    "%.2f",
-                                    car.getPrice()
-                            ),
-                            car.getMileage(),
-                            car.getColor()
-                    }
-            );
+        for (Car car : manager.getAllCars()) {
+
+            tableModel.addRow(new Object[]{
+                    car.getId(),
+                    car.getMake(),
+                    car.getModel(),
+                    car.getYear(),
+                    String.format("%.2f", car.getPrice()),
+                    car.getMileage(),
+                    car.getColor()
+            });
         }
+
+        carTable.clearSelection();
+        carTable.repaint();
     }
 
+
+    // CLEAR FORM
     private void clearFields() {
+
+        selectedCarId = null;
 
         idField.setText("");
 
@@ -826,13 +1102,29 @@ public class CarDmsGui extends JFrame {
         carTable.clearSelection();
     }
 
+
+    // Confirm before closing the application
+    private void exitApplication() {
+
+        int answer = JOptionPane.showConfirmDialog(
+                this,
+                "Are you sure you want to exit?",
+                "Exit Application",
+                JOptionPane.YES_NO_OPTION
+        );
+
+        if (answer == JOptionPane.YES_OPTION) {
+            System.exit(0);
+        }
+    }
+
+
+    // VALIDATE COLOR
     private String getSelectedColor() {
 
-        String color =
-                (String) colorBox.getSelectedItem();
+        String color = (String) colorBox.getSelectedItem();
 
-        if (color == null ||
-                color.equals("Select Color")) {
+        if (color == null || color.equals("Select Color")) {
 
             throw new IllegalArgumentException(
                     "Color cannot be empty."
@@ -842,16 +1134,14 @@ public class CarDmsGui extends JFrame {
         return color;
     }
 
-    private int readPositiveInt(
-            String input,
-            String fieldName) {
 
-        if (input == null ||
-                input.trim().isEmpty()) {
+    // VALIDATE POSITIVE INTEGER
+    private int readPositiveInt(String input, String fieldName) {
+
+        if (input == null || input.trim().isEmpty()) {
 
             throw new IllegalArgumentException(
-                    fieldName
-                            + " cannot be empty."
+                    fieldName + " cannot be empty."
             );
         }
 
@@ -860,37 +1150,32 @@ public class CarDmsGui extends JFrame {
         if (input.startsWith("+")) {
 
             throw new IllegalArgumentException(
-                    fieldName
-                            + " cannot have + sign."
+                    fieldName + " cannot have + sign."
             );
         }
 
         if (input.startsWith("-")) {
 
             throw new IllegalArgumentException(
-                    fieldName
-                            + " cannot be negative."
+                    fieldName + " cannot be negative."
             );
         }
 
         if (!input.matches("[0-9]+")) {
 
             throw new IllegalArgumentException(
-                    fieldName
-                            + " must contain numbers only."
+                    fieldName + " must contain numbers only."
             );
         }
 
         try {
 
-            int value =
-                    Integer.parseInt(input);
+            int value = Integer.parseInt(input);
 
             if (value <= 0) {
 
                 throw new IllegalArgumentException(
-                        fieldName
-                                + " must be greater than 0."
+                        fieldName + " must be greater than 0."
                 );
             }
 
@@ -899,16 +1184,16 @@ public class CarDmsGui extends JFrame {
         } catch (NumberFormatException e) {
 
             throw new IllegalArgumentException(
-                    fieldName
-                            + " is too large."
+                    fieldName + " is too large."
             );
         }
     }
 
+
+    // VALIDATE YEAR
     private int readYear(String input) {
 
-        if (input == null ||
-                input.trim().isEmpty()) {
+        if (input == null || input.trim().isEmpty()) {
 
             throw new IllegalArgumentException(
                     "Year cannot be empty."
@@ -928,8 +1213,7 @@ public class CarDmsGui extends JFrame {
 
         try {
 
-            year =
-                    Integer.parseInt(input);
+            year = Integer.parseInt(input);
 
         } catch (NumberFormatException e) {
 
@@ -938,8 +1222,7 @@ public class CarDmsGui extends JFrame {
             );
         }
 
-        int currentYear =
-                LocalDate.now().getYear();
+        int currentYear = LocalDate.now().getYear();
 
         if (year < 2000) {
 
@@ -951,19 +1234,18 @@ public class CarDmsGui extends JFrame {
         if (year > currentYear) {
 
             throw new IllegalArgumentException(
-                    "Year cannot be later than "
-                            + currentYear
-                            + "."
+                    "Year cannot be later than " + currentYear + "."
             );
         }
 
         return year;
     }
 
+
+    // VALIDATE PRICE
     private double readPrice(String input) {
 
-        if (input == null ||
-                input.trim().isEmpty()) {
+        if (input == null || input.trim().isEmpty()) {
 
             throw new IllegalArgumentException(
                     "Price cannot be empty."
@@ -986,8 +1268,7 @@ public class CarDmsGui extends JFrame {
             );
         }
 
-        if (!input.matches(
-                "[0-9]+(\\.[0-9]+)?")) {
+        if (!input.matches("[0-9]+(\\.[0-9]+)?")) {
 
             throw new IllegalArgumentException(
                     "Price must be a number."
@@ -996,8 +1277,7 @@ public class CarDmsGui extends JFrame {
 
         try {
 
-            double price =
-                    Double.parseDouble(input);
+            double price = Double.parseDouble(input);
 
             if (!Double.isFinite(price)) {
 
@@ -1016,10 +1296,11 @@ public class CarDmsGui extends JFrame {
         }
     }
 
+
+    // VALIDATE MILEAGE
     private int readMileage(String input) {
 
-        if (input == null ||
-                input.trim().isEmpty()) {
+        if (input == null || input.trim().isEmpty()) {
 
             throw new IllegalArgumentException(
                     "Mileage cannot be empty."
@@ -1061,28 +1342,27 @@ public class CarDmsGui extends JFrame {
         }
     }
 
-    private String readText(
-            String input,
-            String fieldName) {
 
-        if (input == null ||
-                input.trim().isEmpty()) {
+    // VALIDATE TEXT
+    private String readText(String input, String fieldName) {
+
+        if (input == null || input.trim().isEmpty()) {
 
             throw new IllegalArgumentException(
-                    fieldName
-                            + " cannot be empty."
+                    fieldName + " cannot be empty."
             );
         }
 
         return input.trim();
     }
 
+
+    // MAIN METHOD
     public static void main(String[] args) {
 
         SwingUtilities.invokeLater(() -> {
 
-            CarDmsGui gui =
-                    new CarDmsGui();
+            CarDmsGui gui = new CarDmsGui();
 
             gui.setVisible(true);
         });

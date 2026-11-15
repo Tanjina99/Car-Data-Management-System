@@ -1,0 +1,6 @@
+7,Toyota,Camry,2022,+25000,35000,Red
+8,Rose,Camry,2022,25000,35000,Blue
+9,Toyota,Camry,202020,25000,35000,Black
+10,Honda,Civic,2021,-5000,20000,White
+11,Ford,Mustang,2020,30000,+20000,Black
+12,Toyota,Camry,2022,25000,35000,34
