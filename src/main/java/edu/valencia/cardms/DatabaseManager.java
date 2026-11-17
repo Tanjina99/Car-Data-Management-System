@@ -13,11 +13,23 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Handles database operations for the Car Data Management System.
+ *
+ * This class connects to the SQLite database and manages car records.
+ * It supports adding, retrieving, updating, deleting, and importing cars.
+ */
 public class DatabaseManager {
 
     private final String databaseURL;
 
-    // Constructor
+    /**
+     * Creates a database manager and initializes the cars table.
+     *
+     * @param databasePath the location of the SQLite database file
+     * @throws IllegalArgumentException if the database path is empty or null
+     * @throws SQLException if the database connection or table creation fails
+     */
     public DatabaseManager(String databasePath) throws SQLException {
 
         if (databasePath == null || databasePath.trim().isEmpty()) {
@@ -31,12 +43,22 @@ public class DatabaseManager {
         createTable();
     }
 
-    // Connect to SQLite
+    /**
+     * Opens a connection to the SQLite database.
+     *
+     * @return an active database connection
+     * @throws SQLException if a database connection cannot be established
+     */
     public Connection connect() throws SQLException {
 
-    return DriverManager.getConnection(databaseURL);
+        return DriverManager.getConnection(databaseURL);
     }
-    // Create cars table
+
+    /**
+     * Creates the cars table if it does not already exist.
+     *
+     * @throws SQLException if the table cannot be created
+     */
     private void createTable() throws SQLException {
 
         String sql =
@@ -58,7 +80,12 @@ public class DatabaseManager {
         }
     }
 
-    // Add a car
+    /**
+     * Adds a car record to the database.
+     *
+     * @param car the car to add
+     * @return true if the car was added successfully, otherwise false
+     */
     public boolean addCar(Car car) {
 
         String sql = "INSERT INTO cars " +
@@ -87,7 +114,11 @@ public class DatabaseManager {
         }
     }
 
-    // Get all cars
+    /**
+     * Retrieves all car records from the database.
+     *
+     * @return a list containing all cars, or an empty list if none are found
+     */
     public List<Car> getAllCars() {
 
         List<Car> cars = new ArrayList<>();
@@ -122,7 +153,12 @@ public class DatabaseManager {
         return cars;
     }
 
-    // Find a car by ID
+    /**
+     * Searches the database for a car using its ID.
+     *
+     * @param id the ID of the car to find
+     * @return the matching car, or null if the car is not found
+     */
     public Car findCarById(int id) {
 
         String sql = "SELECT * FROM cars WHERE id = ?";
@@ -158,9 +194,18 @@ public class DatabaseManager {
         return null;
     }
 
-    // Update a car
-
-    // Update a car without changing its ID.
+    /**
+     * Updates a car without changing its ID.
+     *
+     * @param id the ID of the car to update
+     * @param make the new car manufacturer
+     * @param model the new car model
+     * @param year the new manufacturing year
+     * @param price the new car price
+     * @param mileage the new car mileage
+     * @param color the new car color
+     * @return true if the car was updated successfully, otherwise false
+     */
     public boolean updateCar(
             int id,
             String make,
@@ -175,7 +220,19 @@ public class DatabaseManager {
         );
     }
 
-    // Update a car, including changing its ID.
+    /**
+     * Updates a car and allows its ID to be changed.
+     *
+     * @param oldId the current ID of the car
+     * @param newId the new ID for the car
+     * @param make the new car manufacturer
+     * @param model the new car model
+     * @param year the new manufacturing year
+     * @param price the new car price
+     * @param mileage the new car mileage
+     * @param color the new car color
+     * @return true if the car was updated successfully, otherwise false
+     */
     public boolean updateCar(
             int oldId,
             int newId,
@@ -218,8 +275,12 @@ public class DatabaseManager {
         }
     }
 
-
-    // Delete a car
+    /**
+     * Deletes a car from the database using its ID.
+     *
+     * @param id the ID of the car to delete
+     * @return true if the car was deleted successfully, otherwise false
+     */
     public boolean deleteCar(int id) {
 
         String sql = "DELETE FROM cars WHERE id = ?";
@@ -240,7 +301,11 @@ public class DatabaseManager {
         }
     }
 
-    // Calculate average car price
+    /**
+     * Calculates the average price of all cars in the database.
+     *
+     * @return the average car price, or 0.0 if no result is available
+     */
     public double calculateAveragePrice() {
 
         String sql = "SELECT AVG(price) FROM cars";
@@ -262,7 +327,18 @@ public class DatabaseManager {
         return 0.0;
     }
 
-    // Import cars from a CSV file
+    /**
+     * Imports car records from a CSV file into the database.
+     *
+     * Each record must contain seven comma-separated values:
+     * ID, make, model, year, price, mileage, and color.
+     *
+     * Invalid records are skipped.
+     *
+     * @param filename the path to the CSV file
+     * @return the number of cars successfully imported
+     * @throws IOException if an error occurs while reading the file
+     */
     public int loadFromFile(String filename) throws IOException {
 
         int count = 0;

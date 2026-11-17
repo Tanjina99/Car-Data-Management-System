@@ -5,11 +5,22 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Scanner;
 
+/**
+ * Runs the console-based Car Data Management System.
+ * Provides a menu for adding, displaying, updating, deleting,
+ * and importing cars, as well as calculating the average car price.
+ */
 public class Main {
 
     private static final Scanner scanner = new Scanner(System.in);
     private static final CarManager manager = new CarManager();
 
+
+    /**
+     * Starts the program and displays the menu until the user chooses to exit.
+     *
+     * @param args command-line arguments
+     */
     public static void main(String[] args) {
 
         boolean running = true;

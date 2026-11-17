@@ -15,6 +15,17 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.List;
 
+/**
+ * Provides the graphical user interface for the Car Data Management System.
+ * <p>
+ * This class allows users to add, display, update, delete, and import car
+ * records. It also connects the interface to the database through
+ * CarManager and displays car information in a table.
+ *
+ * @author Tanjina Sultana
+ * @version 1.0
+ */
+
 public class CarDmsGui extends JFrame {
 
     // Application color theme
@@ -58,12 +69,24 @@ public class CarDmsGui extends JFrame {
     // Remembers the original ID of a selected car
     private Integer selectedCarId = null;
 
-
+    /**
+     * Creates a custom button with a blue gradient background and glowing border.
+     * The button changes its appearance when the mouse hovers over it or when
+     * it is pressed.
+     */
     // Custom blue glowing buttons
     private static class OrbButton extends JButton {
 
         private final Color baseColor;
 
+
+        /**
+         * Creates a custom button with the specified text, color, and width.
+         *
+         * @param text the text displayed on the button
+         * @param color the base color used for the button
+         * @param width the preferred width of the button
+         */
         public OrbButton(String text, Color color, int width) {
 
             super(text);
@@ -83,6 +106,12 @@ public class CarDmsGui extends JFrame {
             setCursor(new Cursor(Cursor.HAND_CURSOR));
         }
 
+
+        /**
+         * Draws the button's gradient background, glowing border, and text.
+         *
+         * @param g the graphics context used to draw the button
+         */
         @Override
         protected void paintComponent(Graphics g) {
 
@@ -152,6 +181,11 @@ public class CarDmsGui extends JFrame {
 
 
     // Constructor
+    /**
+     * Creates the Car Data Management System window.
+     * Initializes the database connection, GUI components, menu bar,
+     * and car records table.
+     */
     public CarDmsGui() {
 
         setTitle("Car Data Management System");
@@ -1358,6 +1392,12 @@ public class CarDmsGui extends JFrame {
 
 
     // MAIN METHOD
+    /**
+     * Starts the Car Data Management System application.
+     * Creates and displays the GUI on the Swing event dispatch thread.
+     *
+     * @param args command-line arguments
+     */
     public static void main(String[] args) {
 
         SwingUtilities.invokeLater(() -> {
